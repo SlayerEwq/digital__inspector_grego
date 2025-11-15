@@ -1,6 +1,6 @@
 # Run Backend:
 
-`cd digital__inspector_grego/backend`
+`backend`
 
 `docker build --no-cache -t pdf-inspector-backend .`
 
@@ -9,6 +9,6 @@
 
 # Run Frontend:
 
-`cd digital__inspector_grego/frontend`
+`frontend`
 
 `python -m http.server 8080`

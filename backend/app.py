@@ -24,7 +24,7 @@ app.add_middleware(
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-MODEL_PATH = "models/last.pt"
+MODEL_PATH = "models/grisha.pt"
 if not os.path.exists(MODEL_PATH):
     raise RuntimeError(f"Model file not found: {MODEL_PATH}")
 
