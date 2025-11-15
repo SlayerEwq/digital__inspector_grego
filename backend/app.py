@@ -1,45 +1,35 @@
 import os
-from fastapi import FastAPI, File, UploadFile
-from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
-from ultralytics import YOLO
-import fitz  # PyMuPDF
-from PIL import Image
-import torch
-import uuid
-
-# =======================
-# Создаем FastAPI
-# =======================
-app = FastAPI()
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
-# Папки для сохранения
 os.makedirs("uploads", exist_ok=True)
 os.makedirs("static", exist_ok=True)
 
-# =======================
-# Безопасная загрузка YOLOv8 модели (для PyTorch >=2.6)
-# =======================
+from fastapi import FastAPI, File, UploadFile
+from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+from ultralytics import YOLO
+import fitz
+from PIL import Image
+import uuid
+
+app = FastAPI()
+
+# CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
 MODEL_PATH = "models/last.pt"
+if not os.path.exists(MODEL_PATH):
+    raise RuntimeError(f"Model file not found: {MODEL_PATH}")
 
-# Добавляем все нужные классы в безопасный глобальный контекст
-safe_classes = [
-    "ultralytics.nn.tasks.DetectionModel",
-    "ultralytics.nn.modules.conv.Conv",
-    "torch.nn.modules.conv.Conv2d",
-    "torch.nn.modules.batchnorm.BatchNorm2d",
-    "torch.nn.modules.activation.SiLU",
-    "torch.nn.modules.container.Sequential",
-    "ultralytics.nn.modules.block.C2f"
-]
+model = YOLO(MODEL_PATH)
 
-with torch.serialization.safe_globals(safe_classes):
-    model = YOLO(MODEL_PATH)
-
-# =======================
-# Функция PDF -> JPG
-# =======================
 def pdf_to_jpg(pdf_bytes):
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     images = []
@@ -47,15 +37,15 @@ def pdf_to_jpg(pdf_bytes):
         pix = page.get_pixmap()
         img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
         filename = f"{uuid.uuid4().hex}.jpg"
-        path = os.path.join("static", filename)
-        img.save(path)
-        images.append((path, pix.width, pix.height))
+
+        web_path = f"/static/{filename}"          # путь, который будет видеть браузер
+        fs_path = os.path.join("static", filename)  # путь в ФС внутри контейнера
+
+        img.save(fs_path)
+        images.append((web_path, pix.width, pix.height))
     return images
 
-# =======================
-# Функция детекции
-# =======================
-def run_detection(image_path):
+def run_detection(image_path: str):
     results = model.predict(image_path)
     annotations = []
     for r in results:
@@ -63,32 +53,26 @@ def run_detection(image_path):
             annotations.append({
                 "label": r.names[int(box.cls)],
                 "confidence": float(box.conf),
-                "bbox": box.xyxy.tolist()
+                "bbox": box.xyxy.tolist(),  # [[x1, y1, x2, y2]]
             })
     return annotations
 
-# =======================
-# Эндпоинт загрузки PDF
-# =======================
 @app.post("/upload_pdf")
 async def upload_pdf(file: UploadFile = File(...)):
     pdf_bytes = await file.read()
     jpg_files = pdf_to_jpg(pdf_bytes)
 
     response_json = {}
-    for idx, (jpg_path, width, height) in enumerate(jpg_files, start=1):
-        annotations = run_detection(jpg_path)
+    for idx, (web_path, width, height) in enumerate(jpg_files, start=1):
+        annotations = run_detection(os.path.join(".", web_path.lstrip("/")))
         response_json[f"page_{idx}"] = {
             "page_size": {"width": width, "height": height},
             "annotations": annotations,
-            "processed_image": jpg_path.replace("\\", "/")
+            "processed_image": web_path,  # уже вида /static/xxxxx.jpg
         }
 
     return JSONResponse(response_json)
 
-# =======================
-# Запуск сервера
-# =======================
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+@app.get("/")
+def root():
+    return {"status": "ok"}

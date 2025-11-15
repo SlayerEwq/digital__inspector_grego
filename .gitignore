@@ -1,0 +1,34 @@
+# --- Python environments ---
+venv/
+.venv/
+
+# --- Python cache ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# --- Build / packaging ---
+*.egg-info/
+dist/
+build/
+
+# --- VS Code ---
+.vscode/
+
+# --- macOS system files ---
+.DS_Store
+
+# --- PyMuPDF temporary files ---
+*.xoj
+
+# --- Project-specific folders ---
+uploads/
+static/
+
+# --- Logs ---
+*.log
+
+# --- YOLO weights & training artifacts ---
+runs/
+# *.pt

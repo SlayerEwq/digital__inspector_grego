@@ -1,3 +1,5 @@
+const API_BASE = "http://localhost:1339";
+
 const form = document.getElementById("uploadForm");
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
@@ -30,11 +32,10 @@ form.addEventListener("submit", async (e) => {
     progressText.textContent = "Загрузка файла...";
     progressBar.style.width = "0%";
 
-    // Анимация прогресса
     let progress = 0;
     const loadingInterval = setInterval(() => {
         progress += 5;
-        if (progress > 90) progress = 90; 
+        if (progress > 90) progress = 90;
         progressBar.style.width = progress + "%";
     }, 150);
 
@@ -43,71 +44,90 @@ form.addEventListener("submit", async (e) => {
     // ===============================
     let response;
     try {
-        response = await fetch("http://localhost:5000/process", {
+        response = await fetch(`${API_BASE}/upload_pdf`, {
             method: "POST",
-            body: formData
+            body: formData,
         });
     } catch (err) {
         clearInterval(loadingInterval);
         progressText.textContent = "Ошибка подключения к серверу";
+        console.error(err);
         return;
     }
 
-    const data = await response.json();
-    clearInterval(loadingInterval);
+    let data;
+    try {
+        data = await response.json();
+    } catch (err) {
+        clearInterval(loadingInterval);
+        progressText.textContent = "Ошибка парсинга ответа сервера";
+        console.error(err);
+        return;
+    }
 
+    clearInterval(loadingInterval);
     progressBar.style.width = "100%";
     progressText.textContent = "Готово!";
 
     // ===============================
-    // РАБОТА С JSON
+    // ПРЕДПРОСМОТР JSON
     // ===============================
     jsonPreview.textContent = JSON.stringify(data, null, 2);
 
-    const fileName = Object.keys(data)[0];
-    const pageName = Object.keys(data[fileName])[0];
-    const page = data[fileName][pageName];
+    // Берём первую страницу
+    const pageKey = Object.keys(data)[0];
+    if (!pageKey) {
+        progressText.textContent = "В ответе нет страниц";
+        return;
+    }
 
-    const imagePath = page["processed_image"];
+    const page = data[pageKey];
+    const imagePath = page["processed_image"]; // "/static/xxxx.jpg"
 
     // ===============================
     // ЗАГРУЗКА ИЗОБРАЖЕНИЯ
     // ===============================
     const img = new Image();
-    img.src = imagePath;
+    img.crossOrigin = "anonymous";
+    img.src = `${API_BASE}${imagePath}`;
 
     img.onload = () => {
         canvas.width = img.width;
         canvas.height = img.height;
 
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(img, 0, 0);
 
-        let signCount = 0, stampCount = 0, qrCount = 0;
+        let signCount = 0,
+            stampCount = 0,
+            qrCount = 0;
 
         // ===============================
-        // РИСОВАНИЕ АННОТАЦИЙ
+        // РИСУЕМ БОКСЫ
         // ===============================
-        page.annotations.forEach(ann => {
-            const key = Object.keys(ann)[0];
-            const obj = ann[key];
-            const bbox = obj.bbox;
+        (page.annotations || []).forEach((ann) => {
+            // bbox: [[x1,y1,x2,y2]] или [x1,y1,x2,y2]
+            let raw = ann.bbox;
+            let coords = Array.isArray(raw[0]) ? raw[0] : raw;
+            const [x1, y1, x2, y2] = coords;
+            const w = x2 - x1;
+            const h = y2 - y1;
 
             let color = "black";
-
-            if (obj.category.includes("39")) {
+            if (ann.label === "signature") {
                 color = "blue";
                 signCount++;
-            } else if (obj.category.includes("60")) {
+            } else if (ann.label === "seal") {
                 color = "red";
                 stampCount++;
-            } else if (obj.category.includes("42")) {
+            } else if (ann.label === "QR") {
                 color = "green";
                 qrCount++;
             }
 
             ctx.strokeStyle = color;
             ctx.lineWidth = 3;
-            ctx.strokeRect(bbox.x, bbox.y, bbox.width, bbox.height);
+            ctx.strokeRect(x1, y1, w, h);
         });
 
         countSign.textContent = signCount;
@@ -115,18 +135,23 @@ form.addEventListener("submit", async (e) => {
         countQR.textContent = qrCount;
     };
 
+    img.onerror = (e) => {
+        console.error("Ошибка загрузки изображения", e);
+        progressText.textContent = "Не удалось загрузить изображение страницы";
+    };
+
     // ===============================
     // КНОПКА СКАЧАТЬ JSON
     // ===============================
     downloadJSONBtn.onclick = () => {
         const blob = new Blob([JSON.stringify(data, null, 2)], {
-            type: "application/json"
+            type: "application/json",
         });
 
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `${fileName}.json`;
+        a.download = `${file.name}.json`;
         a.click();
         URL.revokeObjectURL(url);
     };
@@ -136,7 +161,7 @@ form.addEventListener("submit", async (e) => {
     // ===============================
     downloadImageBtn.onclick = () => {
         const link = document.createElement("a");
-        link.download = `${fileName}_preview.jpg`;
+        link.download = `${file.name}_preview.jpg`;
         link.href = canvas.toDataURL("image/jpeg");
         link.click();
     };

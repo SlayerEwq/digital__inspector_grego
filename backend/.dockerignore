@@ -1,0 +1,30 @@
+# Git
+.git
+.gitignore
+
+# Python env
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Артефакты сборки
+dist/
+build/
+*.egg-info/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Логи
+*.log
+
+# YOLO / runtime stuff
+runs/
+
+# Node/прочее (если потом будет фронт рядом)
+node_modules/
