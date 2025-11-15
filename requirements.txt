@@ -1,7 +1,0 @@
-ultralytics
-opencv-python
-pyzbar
-pdf2image
-pillow
-numpy
-uvicorn        # запуск сервера

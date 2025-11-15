@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Цифровой Инспектор</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header>
+        <h1>🛠 Цифровой Инспектор</h1>
+        <p>Автоматическая проверка строительных документов</p>
+    </header>
+
+    <main>
+        <!-- Секция загрузки PDF -->
+        <section class="upload-section">
+            <form id="uploadForm">
+                <input type="file" id="pdfFile" accept=".pdf" required>
+                <button type="submit">Загрузить PDF</button>
+            </form>
+        </section>
+
+        <!-- Секция прогресса -->
+        <section class="progress-section">
+            <div id="progressContainer">
+                <div id="progressBar"></div>
+            </div>
+            <p id="progressText">Ожидание загрузки...</p>
+        </section>
+
+        <!-- Секция предпросмотра -->
+        <section class="preview-section">
+            <div class="canvas-card">
+                <canvas id="canvas"></canvas>
+            </div>
+
+            <div class="stats">
+                <h3>Статистика обнаруженных объектов</h3>
+                <p><span class="color-box blue small-box"></span>Подписи: <span id="countSign">0</span></p>
+                <p><span class="color-box red small-box"></span>Печати/Штампы: <span id="countStamp">0</span></p>
+                <p><span class="color-box green small-box"></span>QR-коды: <span id="countQR">0</span></p>
+            </div>
+
+            <div class="json-card">
+                <h3>Предпросмотр JSON</h3>
+                <pre id="jsonPreview">{}</pre>
+            </div>
+
+            <div class="legend">
+                <span class="legend-item"><div class="color-box blue"></div>Подпись</span>
+                <span class="legend-item"><div class="color-box red"></div>Печать / Штамп</span>
+                <span class="legend-item"><div class="color-box green"></div>QR-код</span>
+            </div>
+
+            <div class="buttons">
+                <button id="downloadJSON">Скачать JSON</button>
+                <button id="downloadImage">Скачать картинку</button>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <p>Digital Inspector © 2025 | Команда хакатона Armeta AI</p>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>
