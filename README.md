@@ -1,1 +1,0 @@
-# digital__inspector_grego
