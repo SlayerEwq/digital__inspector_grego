@@ -35,27 +35,30 @@ main {
 }
 
 header {
-    text-align: left;
-    padding: 28px 36px;
-    background: linear-gradient(90deg,var(--accent),var(--accent-2));
+    width: 100%;                        /* на всю ширину */
     color: white;
     border-bottom-left-radius: 12px;
     border-bottom-right-radius: 12px;
+    padding: 0;                         /* убираем внешний padding */
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
 }
 
-header h1{margin:0;font-size:1.6rem;letter-spacing:0.2px}
-header p{margin:6px 0 0;color:rgba(255,255,255,0.9);font-size:0.95rem}
-
+/* Контейнер внутри */
 .header-flex {
+    max-width: 1120px;                  /* ограничиваем ширину */
+    margin: 0 auto;                     /* центрируем */
+    padding: 28px 36px;                 /* внутренний отступ */
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0px 0px;
-    background: linear-gradient(90deg,var(--accent),var(--accent-2));
     color: white;
-    border-bottom-left-radius: 12px;
-    border-bottom-right-radius: 12px;
+    box-sizing: border-box;             /* паддинги входят в ширину */
 }
+
+header h1 { margin:0; font-size:1.6rem; letter-spacing:0.2px; }
+header p  { margin:6px 0 0; color:rgba(255,255,255,0.9); font-size:0.95rem; }
+
+
 
 .header-title-block {
     display: flex;
