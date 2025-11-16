@@ -1,34 +1,26 @@
 import os
-from pathlib import Path
+import io
 import uuid
+import zipfile
 
 import fitz
-from PIL import Image
-from fastapi import FastAPI, File, UploadFile, HTTPException
-from fastapi.responses import JSONResponse
+from PIL import Image, ImageDraw
+
+from fastapi import FastAPI, File, UploadFile, Body
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from ultralytics import YOLO
 
-# -------------------------------------------------
-# БАЗОВЫЕ ПУТИ
-# -------------------------------------------------
-BASE_DIR = Path(__file__).resolve().parent
-STATIC_DIR = BASE_DIR / "static"
-UPLOADS_DIR = BASE_DIR / "uploads"
-MODEL_PATH = BASE_DIR / "models" / "grisha.pt"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-os.makedirs(STATIC_DIR, exist_ok=True)
-os.makedirs(UPLOADS_DIR, exist_ok=True)
+# Папки
+os.makedirs(os.path.join(BASE_DIR, "uploads"), exist_ok=True)
+os.makedirs(os.path.join(BASE_DIR, "static"), exist_ok=True)
 
-# -------------------------------------------------
-# FASTAPI + CORS
-# -------------------------------------------------
-app = FastAPI(
-    title="Digital Inspector Backend",
-    version="1.0.0",
-)
+app = FastAPI()
 
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -37,134 +29,143 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+app.mount(
+    "/static",
+    StaticFiles(directory=os.path.join(BASE_DIR, "static")),
+    name="static",
+)
 
-# -------------------------------------------------
-# ЗАГРУЗКА МОДЕЛИ YOLO
-# -------------------------------------------------
-if not MODEL_PATH.exists():
+MODEL_PATH = os.path.join(BASE_DIR, "models", "grisha.pt")
+if not os.path.exists(MODEL_PATH):
     raise RuntimeError(f"Model file not found: {MODEL_PATH}")
 
-# Классы в том же порядке, что и при обучении
-CLASS_NAMES = ["QR", "signature", "seal"]
-
-model = YOLO(str(MODEL_PATH))
+model = YOLO(MODEL_PATH)
 
 
-# -------------------------------------------------
+# =======================
 # PDF -> JPG
-# -------------------------------------------------
-def pdf_to_images(pdf_bytes: bytes):
+# =======================
+def pdf_to_jpg(pdf_bytes):
     """
-    Конвертация PDF в JPG через PyMuPDF.
-    Возвращает список страниц с путями и размерами.
+    Возвращает список (fs_path, web_path, width, height) для каждой страницы.
     """
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-    pages = []
-
-    for idx, page in enumerate(doc, start=1):
+    images = []
+    for page in doc:
         pix = page.get_pixmap()
-        filename = f"{uuid.uuid4().hex}_page_{idx}.jpg"
+        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+        filename = f"{uuid.uuid4().hex}.jpg"
 
-        fs_path = STATIC_DIR / filename          # путь в ФС (для модели)
-        web_path = f"/static/{filename}"         # путь, который увидит браузер
+        fs_path = os.path.join(BASE_DIR, "static", filename)
+        web_path = f"/static/{filename}"
 
-        pix.save(fs_path)
-        pages.append(
-            {
-                "page_index": idx,
-                "fs_path": fs_path,
-                "web_path": web_path,
-                "width": pix.width,
-                "height": pix.height,
-            }
-        )
-
-    return pages
+        img.save(fs_path)
+        images.append((fs_path, web_path, pix.width, pix.height))
+    return images
 
 
-# -------------------------------------------------
-# ЗАПУСК МОДЕЛИ НА ОДНОМ ИЗОБРАЖЕНИИ
-# -------------------------------------------------
-def run_detection(image_path: Path):
-    """
-    Запускает YOLOv8 на JPG и возвращает список аннотаций
-    в формате, близком к тому, что делал коллега.
-    """
-
-    results = model(str(image_path))[0]
-
+# =======================
+# Детекция
+# =======================
+def run_detection(image_path: str):
+    results = model.predict(image_path)
     annotations = []
-
-    for i, box in enumerate(results.boxes):
-        cls_id = int(box.cls[0])
-        conf = float(box.conf[0])
-
-        # базовый порог
-        if conf < 0.25:
-            continue
-
-        x1, y1, x2, y2 = box.xyxy[0].tolist()
-        width = x2 - x1
-        height = y2 - y1
-        area = width * height
-
-        if 0 <= cls_id < len(CLASS_NAMES):
-            category_name = CLASS_NAMES[cls_id]
-        else:
-            category_name = f"class_{cls_id}"
-
-        annotations.append(
-            {
-                f"annotation_{i}": {
-                    "category": category_name,  # "QR" | "signature" | "seal"
-                    "bbox": {
-                        "x": float(x1),
-                        "y": float(y1),
-                        "width": float(width),
-                        "height": float(height),
-                    },
-                    "area": float(area),
-                    "confidence": conf,
+    for r in results:
+        for box in r.boxes:
+            annotations.append(
+                {
+                    "label": r.names[int(box.cls)],
+                    "confidence": float(box.conf),
+                    "bbox": box.xyxy.tolist(),  # [[x1,y1,x2,y2]]
                 }
-            }
-        )
-
+            )
     return annotations
 
 
-# -------------------------------------------------
-# ЭНДПОИНТ ЗАГРУЗКИ PDF
-# -------------------------------------------------
+# =======================
+# Рисуем боксы на картинке
+# =======================
+def draw_bboxes(fs_path: str, annotations: list, out_path: str):
+    img = Image.open(fs_path)
+    draw = ImageDraw.Draw(img)
+
+    for ann in annotations:
+        raw = ann["bbox"]
+        coords = raw[0] if isinstance(raw[0], (list, tuple)) else raw
+        x1, y1, x2, y2 = coords
+
+        label = ann["label"]
+        # подпись — красный, печать — синий, QR — зелёный
+        color = "black"
+        if label == "signature":
+            color = "red"
+        elif label == "seal":
+            color = "blue"
+        elif label == "QR":
+            color = "green"
+
+        draw.rectangle([x1, y1, x2, y2], outline=color, width=3)
+
+    img.save(out_path)
+
+
+# =======================
+# Эндпоинт загрузки PDF
+# =======================
 @app.post("/upload_pdf")
 async def upload_pdf(file: UploadFile = File(...)):
-    if file.content_type != "application/pdf":
-        raise HTTPException(status_code=400, detail="Нужен PDF-файл")
-
     pdf_bytes = await file.read()
-    if not pdf_bytes:
-        raise HTTPException(status_code=400, detail="Пустой файл")
+    jpg_files = pdf_to_jpg(pdf_bytes)
 
-    pages = pdf_to_images(pdf_bytes)
+    response_json = {}
 
-    result = {}
-    for page in pages:
-        anns = run_detection(page["fs_path"])
-        result[f"page_{page['page_index']}"] = {
-            "page_size": {
-                "width": page["width"],
-                "height": page["height"],
-            },
-            "annotations": anns,
-            "processed_image": page["web_path"],  # типа "/static/xxx.jpg"
+    for idx, (fs_path, web_path, width, height) in enumerate(jpg_files, start=1):
+        annotations = run_detection(fs_path)
+
+        # сохраняем ОТДЕЛЬНУЮ размеченную картинку
+        annotated_name = f"annotated_{os.path.basename(fs_path)}"
+        annotated_fs_path = os.path.join(BASE_DIR, "static", annotated_name)
+        annotated_web_path = f"/static/{annotated_name}"
+
+        draw_bboxes(fs_path, annotations, annotated_fs_path)
+
+        response_json[f"page_{idx}"] = {
+            "page_size": {"width": width, "height": height},
+            "annotations": annotations,
+            "processed_image": annotated_web_path,  # уже с боксами
+            "raw_image": web_path,                  # исходная страница
         }
 
-    return JSONResponse(result)
+    return JSONResponse(response_json)
 
 
-# -------------------------------------------------
-# ПРОСТОЙ HEALTHCHECK
-# -------------------------------------------------
+# =======================
+# Архив с изображениями
+# =======================
+@app.post("/download_images")
+async def download_images(payload: dict = Body(...)):
+    """
+    Ожидает { "images": ["/static/annotated_xxx.jpg", ...] }
+    и возвращает ZIP с этими файлами.
+    """
+    images = payload.get("images", [])
+    mem_file = io.BytesIO()
+
+    with zipfile.ZipFile(mem_file, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for rel_path in images:
+            rel_path = rel_path.lstrip("/")
+            fs_path = os.path.join(BASE_DIR, rel_path)
+            if os.path.exists(fs_path):
+                zf.write(fs_path, arcname=os.path.basename(fs_path))
+
+    mem_file.seek(0)
+    return StreamingResponse(
+        mem_file,
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="images.zip"'},
+    )
+
+
 @app.get("/")
 def root():
-    return {"status": "ok", "model": MODEL_PATH.name}
+    return {"status": "ok"}

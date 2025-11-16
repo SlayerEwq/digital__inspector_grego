@@ -22,7 +22,6 @@
             </form>
         </section>
 
-
         <!-- Секция прогресса -->
         <section class="progress-section">
             <div id="progressContainer">
@@ -35,12 +34,19 @@
         <section class="preview-section">
             <div class="canvas-card">
                 <canvas id="canvas"></canvas>
+
+                <!-- НОВЫЙ БЛОК НАВИГАЦИИ -->
+                <div class="page-controls">
+                    <button id="prevPage">&larr; Предыдущая</button>
+                    <span id="pageInfo">Страница 0 / 0</span>
+                    <button id="nextPage">Следующая &rarr;</button>
+                </div>
             </div>
 
             <div class="stats">
                 <h3>Статистика обнаруженных объектов</h3>
-                <p><span class="color-box blue small-box"></span>Подписи: <span id="countSign">0</span></p>
-                <p><span class="color-box red small-box"></span>Печати/Штампы: <span id="countStamp">0</span></p>
+                <p><span class="color-box red small-box"></span>Подписи: <span id="countSign">0</span></p>
+                <p><span class="color-box blue small-box"></span>Печати/Штампы: <span id="countStamp">0</span></p>
                 <p><span class="color-box green small-box"></span>QR-коды: <span id="countQR">0</span></p>
             </div>
 
@@ -51,10 +57,10 @@
 
             <div class="legend">
                 <span class="legend-item">
-                    <div class="color-box blue"></div>Подпись
+                    <div class="color-box red"></div>Подпись
                 </span>
                 <span class="legend-item">
-                    <div class="color-box red"></div>Печать / Штамп
+                    <div class="color-box blue"></div>Печать / Штамп
                 </span>
                 <span class="legend-item">
                     <div class="color-box green"></div>QR-код
@@ -63,13 +69,14 @@
 
             <div class="buttons">
                 <button id="downloadJSON">Скачать JSON</button>
-                <button id="downloadImage">Скачать картинку</button>
+                <button id="downloadImagesZip">Скачать архив изображений</button>
             </div>
         </section>
+
     </main>
 
     <footer>
-        <p>Digital Inspector © 2025 | Команда хакатона Armeta AI</p>
+        <p>Digital Inspector © 2025 | Команда Grego</p>
     </footer>
 
     <script src="app.js"></script>
