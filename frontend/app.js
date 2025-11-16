@@ -23,8 +23,8 @@ const pageInfo = document.getElementById("pageInfo");
 
 // состояние страниц
 const pagesState = {
-    rawData: null,   // исходный объект
-    pages: [],       // массив [key, page]
+    rawData: null,   // полный ответ сервера (с уровнем "Имя файла" -> "page_N" -> ...)
+    pages: [],       // массив [key, page] только для страниц (page_1, page_2, ...)
     currentIndex: 0, // индекс в pages
 };
 
@@ -78,32 +78,53 @@ function renderPage(index) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(img, 0, 0);
 
-        (page.annotations || []).forEach((ann) => {
-            const raw = ann.bbox;
-            const coords = Array.isArray(raw[0]) ? raw[0] : raw;
-            const [x1, y1, x2, y2] = coords;
-            const w = x2 - x1;
-            const h = y2 - y1;
-
-            let color = "black";
-            if (ann.label === "signature") {
-                color = "red";
-            } else if (ann.label === "seal") {
-                color = "blue";
-            } else if (ann.label === "QR") {
-                color = "green";
-            }
-
-            ctx.strokeStyle = color;
-            ctx.lineWidth = 3;
-            ctx.strokeRect(x1, y1, w, h);
-        });
+        // ВАЖНО: боксы уже нарисованы на processed_image на бэке,
+        // поэтому на фронте ничего поверх не рисуем.
     };
 
     img.onerror = (e) => {
         console.error("Ошибка загрузки изображения", e);
         progressText.textContent = "Не удалось загрузить изображение страницы";
     };
+}
+
+// Счётчик по всему документу на основе новой структуры аннотаций
+function updateGlobalStats() {
+    if (!pagesState.pages.length) {
+        countSign.textContent = "0";
+        countStamp.textContent = "0";
+        countQR.textContent = "0";
+        return;
+    }
+
+    let totalSign = 0;
+    let totalStamp = 0;
+    let totalQR = 0;
+
+    pagesState.pages.forEach(([_, page]) => {
+        (page.annotations || []).forEach((annObj) => {
+            // annObj имеет вид { "annotation_0": { category, bbox, area } }
+            const keys = Object.keys(annObj);
+            if (!keys.length) return;
+
+            const inner = annObj[keys[0]];
+            if (!inner || !inner.category) return;
+
+            const category = String(inner.category).toLowerCase();
+
+            if (category === "signature") {
+                totalSign++;
+            } else if (category === "stamp") {
+                totalStamp++;
+            } else if (category === "qr") {
+                totalQR++;
+            }
+        });
+    });
+
+    countSign.textContent = totalSign;
+    countStamp.textContent = totalStamp;
+    countQR.textContent = totalQR;
 }
 
 // ===============================
@@ -158,25 +179,37 @@ form.addEventListener("submit", async (e) => {
 
     console.log("Ответ бэкенда:", data);
 
-    // Ожидаем формат:
+    // Сохраняем ПОЛНЫЙ ответ как есть (с уровнем "Имя файла")
+    pagesState.rawData = data;
+
+    // Извлекаем карту страниц для внутреннего использования:
+    // ожидаем формат:
     // {
-    //   "page_1": { ... },
-    //   "page_2": { ... },
-    //   ...
+    //   "fileName.pdf": {
+    //       "page_1": { ... },
+    //       "page_2": { ... }
+    //   }
     // }
+    let pagesMap = null;
+    const topKeys = Object.keys(data);
 
-    let pagesMap = data;
-
-    // На всякий случай, если вдруг придёт формат { "file.pdf": { page_1: {...} } }
-    if (!("page_1" in data) && Object.keys(data).length === 1) {
-        const onlyKey = Object.keys(data)[0];
+    if (topKeys.length === 1 && !topKeys[0].startsWith("page_")) {
+        const onlyKey = topKeys[0];
         const inner = data[onlyKey];
         if (inner && typeof inner === "object") {
             pagesMap = inner;
         }
+    } else {
+        // fallback, если вдруг когда-нибудь вернётся старый формат
+        pagesMap = data;
     }
 
-    pagesState.rawData = pagesMap;
+    if (!pagesMap) {
+        progressText.textContent = "Некорректный формат ответа сервера";
+        console.error("Не удалось извлечь страницы из ответа:", data);
+        return;
+    }
+
     pagesState.pages = Object.entries(pagesMap).sort((a, b) => {
         const ai = parseInt(a[0].split("_")[1] || "0", 10);
         const bi = parseInt(b[0].split("_")[1] || "0", 10);
@@ -184,7 +217,8 @@ form.addEventListener("submit", async (e) => {
     });
     pagesState.currentIndex = 0;
 
-    jsonPreview.textContent = JSON.stringify(pagesMap, null, 2);
+    // В предпросмотр вывожим полный JSON, такой же, как пойдёт на скачивание
+    jsonPreview.textContent = JSON.stringify(pagesState.rawData, null, 2);
 
     if (!pagesState.pages.length) {
         progressText.textContent = "В ответе нет страниц";
@@ -192,10 +226,10 @@ form.addEventListener("submit", async (e) => {
         return;
     }
 
-    // <<< ВАЖНО: сначала считаем статистику по всему документу
+    // Сначала считаем статистику по всему документу
     updateGlobalStats();
 
-    // а уже потом показываем первую страницу
+    // Потом показываем первую страницу
     renderPage(0);
 });
 
@@ -219,7 +253,7 @@ if (nextPageBtn) {
 }
 
 // ===============================
-// СКАЧАТЬ JSON
+// СКАЧАТЬ JSON (ровно тот, что вернул бэк)
 // ===============================
 downloadJSONBtn.onclick = () => {
     if (!pagesState.rawData) return;
@@ -279,32 +313,3 @@ downloadImagesZipBtn.onclick = async () => {
 
 // Инициализация контролов при загрузке
 updatePageControls();
-
-function updateGlobalStats() {
-    if (!pagesState.pages.length) {
-        countSign.textContent = "0";
-        countStamp.textContent = "0";
-        countQR.textContent = "0";
-        return;
-    }
-
-    let totalSign = 0;
-    let totalStamp = 0;
-    let totalQR = 0;
-
-    pagesState.pages.forEach(([_, page]) => {
-        (page.annotations || []).forEach((ann) => {
-            if (ann.label === "signature") {
-                totalSign++;
-            } else if (ann.label === "seal") {
-                totalStamp++;
-            } else if (ann.label === "QR") {
-                totalQR++;
-            }
-        });
-    });
-
-    countSign.textContent = totalSign;
-    countStamp.textContent = totalStamp;
-    countQR.textContent = totalQR;
-}
