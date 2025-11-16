@@ -82,7 +82,14 @@ def pdf_to_jpg(pdf_bytes):
 # Детекция
 # =======================
 def run_detection(image_path: str):
-    results = model.predict(image_path)
+    ###############################################
+    # МЕНЯТЬ КОНФИДЕНС и ИОУ ТУТ
+    ###############################################
+    results = model.predict(
+        source=image_path,
+        conf=0.30,
+        iou=0.95
+        )
     annotations = []
     for r in results:
         for box in r.boxes:
@@ -169,8 +176,8 @@ async def upload_pdf(file: UploadFile = File(...)):
                             "height": bbox_height,
                         },
                         "area": area,
-                        # Если захочешь, можно добавить confidence:
-                        # "confidence": ann["confidence"],
+                        # можно добавить confidence:
+                        "confidence": ann["confidence"],
                     }
                 }
             )
