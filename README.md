@@ -1,6 +1,6 @@
 # Run Backend:
 
-`backend`
+`cd backend`
 
 `docker build -t pdf-inspector-backend .`
 
@@ -9,6 +9,6 @@
 
 # Run Frontend:
 
-`frontend`
+`cd frontend`
 
 `python -m http.server 8080`

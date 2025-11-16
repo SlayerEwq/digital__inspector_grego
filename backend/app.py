@@ -42,6 +42,20 @@ if not os.path.exists(MODEL_PATH):
 model = YOLO(MODEL_PATH)
 
 
+def map_label_to_category(label: str) -> str:
+    """
+    Маппинг имён классов YOLO (names: ["QR", "signature", "seal"])
+    в наши категории из примера JSON.
+    """
+    if label == "QR":
+        return "qr"
+    if label == "signature":
+        return "signature"
+    if label == "seal":
+        return "stamp"
+    return label.lower()
+
+
 # =======================
 # PDF -> JPG
 # =======================
@@ -117,24 +131,61 @@ async def upload_pdf(file: UploadFile = File(...)):
     pdf_bytes = await file.read()
     jpg_files = pdf_to_jpg(pdf_bytes)
 
-    response_json = {}
+    # Внутренняя структура: "page_1" -> {...}, "page_2" -> {...}
+    pages_json = {}
 
     for idx, (fs_path, web_path, width, height) in enumerate(jpg_files, start=1):
-        annotations = run_detection(fs_path)
+        # Детекция
+        raw_annotations = run_detection(fs_path)
 
-        # сохраняем ОТДЕЛЬНУЮ размеченную картинку
+        # Сохраняем размеченную картинку
         annotated_name = f"annotated_{os.path.basename(fs_path)}"
         annotated_fs_path = os.path.join(BASE_DIR, "static", annotated_name)
         annotated_web_path = f"/static/{annotated_name}"
 
-        draw_bboxes(fs_path, annotations, annotated_fs_path)
+        draw_bboxes(fs_path, raw_annotations, annotated_fs_path)
 
-        response_json[f"page_{idx}"] = {
+        # Преобразуем аннотации в структуру как в примере selected_annotations.json
+        page_annotations = []
+        for ann_index, ann in enumerate(raw_annotations):
+            raw = ann["bbox"]
+            coords = raw[0] if isinstance(raw[0], (list, tuple)) else raw
+            x1, y1, x2, y2 = coords
+
+            bbox_width = x2 - x1
+            bbox_height = y2 - y1
+            area = bbox_width * bbox_height
+
+            category = map_label_to_category(ann["label"])
+
+            page_annotations.append(
+                {
+                    f"annotation_{ann_index}": {
+                        "category": category,
+                        "bbox": {
+                            "x": x1,
+                            "y": y1,
+                            "width": bbox_width,
+                            "height": bbox_height,
+                        },
+                        "area": area,
+                        # Если захочешь, можно добавить confidence:
+                        # "confidence": ann["confidence"],
+                    }
+                }
+            )
+
+        pages_json[f"page_{idx}"] = {
             "page_size": {"width": width, "height": height},
-            "annotations": annotations,
-            "processed_image": annotated_web_path,  # уже с боксами
+            "annotations": page_annotations,
+            # Дополнительно оставляем пути к картинкам для фронта
+            "processed_image": annotated_web_path,  # размеченная
             "raw_image": web_path,                  # исходная страница
         }
+
+    # Внешний уровень: "Имя файла" -> { "page_1": {...}, ... }
+    file_key = file.filename or "uploaded.pdf"
+    response_json = {file_key: pages_json}
 
     return JSONResponse(response_json)
 
