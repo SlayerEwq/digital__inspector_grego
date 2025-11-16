@@ -28,6 +28,123 @@ const pagesState = {
     currentIndex: 0, // индекс в pages
 };
 
+const progressSection = document.querySelector('.progress-section');
+const previewSection = document.querySelector('.preview-section');
+const jsonCard = document.querySelector('.json-card');
+
+const chooseFileLabel = document.getElementById('chooseFileLabel');
+const selectedFileName = document.getElementById('selectedFileName');
+
+// Скрыть секции при инициализации страницы
+document.addEventListener('DOMContentLoaded', function() {
+    if (progressSection) progressSection.classList.add('hidden');
+    if (previewSection) previewSection.classList.add('hidden');
+    if (jsonCard) jsonCard.classList.add('hidden');
+});
+
+const centerFileSection = document.getElementById('centerFileSection');
+const chooseFileHeaderBtn = document.getElementById('chooseFileHeaderBtn');
+const fileInput = document.getElementById('pdfFile');
+
+chooseFileHeaderBtn.addEventListener('click', function() {
+    fileInput.click();
+});
+
+fileInput.addEventListener('change', async function() {
+    if (fileInput.files.length > 0) {
+        // Скрыть label выбора PDF по центру
+        if (chooseFileLabel) chooseFileLabel.style.display = 'none';
+        // Скрыть центральную секцию
+        if (centerFileSection) centerFileSection.style.display = 'none';
+        // Показать предпросмотр/json
+        if (previewSection) previewSection.classList.remove('hidden');
+        if (jsonCard) jsonCard.classList.remove('hidden');
+        // Показать имя файла над предпросмотром
+        if (selectedFileName) {
+            selectedFileName.textContent = fileInput.files[0].name;
+        }
+        // Показать чёрную кнопку в header
+        if (chooseFileHeaderBtn) chooseFileHeaderBtn.style.display = 'inline-block';
+
+        // --- Логика загрузки PDF и запуска обработки ---
+        const file = fileInput.files[0];
+        const formData = new FormData();
+        formData.append("file", file);
+
+        let response;
+        try {
+            response = await fetch(`${API_BASE}/upload_pdf`, {
+                method: "POST",
+                body: formData,
+            });
+        } catch (err) {
+            alert("Ошибка подключения к серверу");
+            console.error(err);
+            return;
+        }
+
+        let data;
+        try {
+            data = await response.json();
+        } catch (err) {
+            alert("Ошибка парсинга ответа сервера");
+            console.error(err);
+            return;
+        }
+
+        // Сохраняем ПОЛНЫЙ ответ как есть (с уровнем "Имя файла")
+        pagesState.rawData = data;
+
+        // Извлекаем карту страниц для внутреннего использования:
+        let pagesMap = null;
+        const topKeys = Object.keys(data);
+        if (topKeys.length === 1 && !topKeys[0].startsWith("page_")) {
+            const onlyKey = topKeys[0];
+            const inner = data[onlyKey];
+            if (inner && typeof inner === "object") {
+                pagesMap = inner;
+            }
+        } else {
+            pagesMap = data;
+        }
+        if (!pagesMap) {
+            alert("Некорректный формат ответа сервера");
+            console.error("Не удалось извлечь страницы из ответа:", data);
+            return;
+        }
+        pagesState.pages = Object.entries(pagesMap).sort((a, b) => {
+            const ai = parseInt(a[0].split("_")[1] || "0", 10);
+            const bi = parseInt(b[0].split("_")[1] || "0", 10);
+            return ai - bi;
+        });
+        pagesState.currentIndex = 0;
+        jsonPreview.textContent = JSON.stringify(pagesState.rawData, null, 2);
+        if (!pagesState.pages.length) {
+            alert("В ответе нет страниц");
+            updatePageControls();
+            return;
+        }
+        updateGlobalStats();
+        renderPage(0);
+    }
+});
+
+form.addEventListener('submit', async function(e) {
+    e.preventDefault();
+    // Скрыть центральную секцию
+    if (centerFileSection) centerFileSection.style.display = 'none';
+    // Показать предпросмотр/json
+    if (previewSection) previewSection.classList.remove('hidden');
+    if (jsonCard) jsonCard.classList.remove('hidden');
+    // Показать имя файла над предпросмотром
+    if (selectedFileName) {
+        selectedFileName.textContent = fileInput.files[0].name;
+    }
+    // Показать чёрную кнопку в header
+    if (chooseFileHeaderBtn) chooseFileHeaderBtn.style.display = 'inline-block';
+    // ...логика загрузки PDF и запуска обработки...
+});
+
 // ===============================
 // ХЕЛПЕРЫ
 // ===============================
@@ -135,6 +252,11 @@ form.addEventListener("submit", async (e) => {
 
     const fileInput = document.getElementById("pdfFile");
     if (!fileInput.files.length) return;
+
+    // Показать скрытые секции
+    if (progressSection) progressSection.classList.remove('hidden');
+    if (previewSection) previewSection.classList.remove('hidden');
+    if (jsonCard) jsonCard.classList.remove('hidden');
 
     const file = fileInput.files[0];
     const formData = new FormData();

@@ -87,8 +87,8 @@ def run_detection(image_path: str):
     ###############################################
     results = model.predict(
         source=image_path,
-        conf=0.30,
-        iou=0.95
+        conf=0.2,
+        iou=0.2
         )
     annotations = []
     for r in results:
