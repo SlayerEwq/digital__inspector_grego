@@ -177,7 +177,7 @@ async def upload_pdf(file: UploadFile = File(...)):
                         },
                         "area": area,
                         # можно добавить confidence:
-                        "confidence": ann["confidence"],
+                        #"confidence": ann["confidence"],
                     }
                 }
             )
